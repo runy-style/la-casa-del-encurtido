@@ -627,8 +627,6 @@ window.addEventListener('storage', (e) => {
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
-  PRODUCTS = getActiveProducts();
-  BUSINESS_INFO = getActiveBusinessInfo();
   initializeProductSelections();
   updateStoreStatusBadge();
   renderCategoryPills();
@@ -641,6 +639,16 @@ document.addEventListener("DOMContentLoaded", () => {
   setupSearchEvents();
   setupHeaderScroll();
   loadCartFromStorage();
+
+  // Sincronizar en vivo con la base de datos central en Supabase
+  fetchProductsFromSupabase().then((liveProducts) => {
+    if (liveProducts && liveProducts.length > 0) {
+      PRODUCTS = liveProducts;
+      initializeProductSelections();
+      renderCategoryPills();
+      renderProducts();
+    }
+  });
 
   // Actualizar horario cada 2 minutos
   setInterval(updateStoreStatusBadge, 120000);

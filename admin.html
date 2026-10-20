@@ -813,11 +813,19 @@
       document.getElementById(tabId).classList.add('active');
     }
 
-    // Cargar productos en el panel editable
+    // Cargar productos en el panel editable desde Supabase
     let currentAdminProducts = [];
 
-    function loadAdminProducts() {
-      currentAdminProducts = getActiveProducts();
+    async function loadAdminProducts() {
+      const container = document.getElementById("admin-products-container");
+      if (!container) return;
+      container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--text-muted); font-size: 0.9rem;">⏳ Conectando con la nube de Supabase...</div>`;
+
+      currentAdminProducts = await fetchProductsFromSupabase();
+      renderAdminProductsList();
+    }
+
+    function renderAdminProductsList() {
       const container = document.getElementById("admin-products-container");
       if (!container) return;
 
@@ -897,8 +905,8 @@
       }
     };
 
-    // Guardar un producto individual
-    window.saveSingleProduct = function(productId) {
+    // Guardar un producto individual en Supabase
+    window.saveSingleProduct = async function(productId) {
       const prod = currentAdminProducts.find(p => p.id === productId);
       if (!prod) return;
 
@@ -916,12 +924,19 @@
         }
       });
 
-      saveCustomProducts(currentAdminProducts);
-      showAdminToast(`¡Precios de "${prod.name}" actualizados con éxito!`);
+      showAdminToast(`Guardando "${prod.name}" en Supabase...`);
+      const ok = await updateProductInSupabase(prod);
+      if (ok) {
+        showAdminToast(`¡"${prod.name}" guardado! Sincronizado en todos los celulares.`);
+      } else {
+        showAdminToast(`Guardado localmente (revisar conexión a Supabase).`);
+      }
     };
 
-    // Guardar todos los productos
-    window.saveAllChangesGlobal = function() {
+    // Guardar todos los productos en Supabase
+    window.saveAllChangesGlobal = async function() {
+      showAdminToast("Guardando todos los productos en Supabase...");
+      
       currentAdminProducts.forEach(prod => {
         const badgeInput = document.getElementById(`badge-${prod.id}`);
         if (badgeInput) prod.badge = badgeInput.value.trim();
@@ -937,17 +952,18 @@
         });
       });
 
-      saveCustomProducts(currentAdminProducts);
-      showAdminToast("¡Todos los precios y cambios fueron guardados!");
+      await Promise.all(currentAdminProducts.map(p => updateProductInSupabase(p)));
+      showAdminToast("¡Todos los productos y precios actualizados en la nube!");
     };
 
-    // Eliminar producto
-    window.deleteProduct = function(productId) {
+    // Eliminar producto de Supabase
+    window.deleteProduct = async function(productId) {
       if (!confirm("¿Seguro que deseas eliminar este producto del catálogo?")) return;
+      showAdminToast("Eliminando de la nube...");
+      await deleteProductFromSupabase(productId);
       currentAdminProducts = currentAdminProducts.filter(p => p.id !== productId);
-      saveCustomProducts(currentAdminProducts);
-      loadAdminProducts();
-      showAdminToast("Producto eliminado del catálogo");
+      renderAdminProductsList();
+      showAdminToast("Producto eliminado de todos los dispositivos.");
     };
 
     // Imagen seleccionada en formulario
@@ -976,8 +992,8 @@
       }
     }
 
-    // Crear nuevo producto
-    function handleCreateProduct(e) {
+    // Crear nuevo producto y subirlo a Supabase
+    async function handleCreateProduct(e) {
       e.preventDefault();
 
       const name = document.getElementById('new-name').value.trim();
@@ -1008,16 +1024,17 @@
         ]
       };
 
+      showAdminToast("Subiendo nuevo producto a Supabase...");
+      await insertProductInSupabase(newProd);
+
       currentAdminProducts.unshift(newProd);
-      saveCustomProducts(currentAdminProducts);
-      
       document.getElementById('new-product-form').reset();
-      showAdminToast(`¡"${name}" agregado exitosamente a la tienda!`);
+      showAdminToast(`¡"${name}" publicado y visible en todos los dispositivos!`);
       
       // Volver a pestaña precios
       switchTab('tab-precios');
       document.querySelectorAll('.tab-btn')[0].classList.add('active');
-      loadAdminProducts();
+      renderAdminProductsList();
     }
 
     // Guardar datos del local

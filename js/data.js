@@ -1,7 +1,12 @@
 /**
  * Datos y configuración de La Casa del Encurtido - La Ligua
- * Soporta almacenamiento local dinámico para autoadministración
+ * Conectado en tiempo real con Supabase Cloud Database
  */
+
+const SUPABASE_CONFIG = {
+  url: "https://oyjygzderhxghzsivyyn.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95anlnemRlcmh4Z2h6c2l2eXluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI1MzI3NzYsImV4cCI6MjEwODEwODc3Nn0.nWMtMbY8KroThkfx_-lkhSjar13c7hN_cb9l3ktZWV8"
+};
 
 const DEFAULT_BUSINESS_INFO = {
   name: "La Casa del Encurtido",
@@ -167,73 +172,118 @@ const DEFAULT_PRODUCTS = [
   }
 ];
 
-// Helper para obtener productos con cambios del dueño (localStorage)
-function getActiveProducts() {
+// Helper local como respaldo offline
+function getLocalFallbackProducts() {
   try {
     const saved = localStorage.getItem("casa_encurtido_custom_products");
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-  } catch (e) {
-    console.warn("No se pudieron cargar productos personalizados, usando catálogo base:", e);
-  }
+  } catch (e) {}
   return DEFAULT_PRODUCTS;
 }
 
-// Helper para obtener datos de contacto con cambios del dueño
-function getActiveBusinessInfo() {
+// Variables activas
+let PRODUCTS = getLocalFallbackProducts();
+let BUSINESS_INFO = DEFAULT_BUSINESS_INFO;
+
+// ============================================================================
+// CONEXIÓN REST DIRECTA A SUPABASE (Funciona en todos los navegadores y celulares)
+// ============================================================================
+
+async function fetchProductsFromSupabase() {
   try {
-    const saved = localStorage.getItem("casa_encurtido_custom_info");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return { ...DEFAULT_BUSINESS_INFO, ...parsed };
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/productos?select=*&order=created_at.asc`, {
+      headers: {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        PRODUCTS = data;
+        try {
+          localStorage.setItem("casa_encurtido_custom_products", JSON.stringify(data));
+        } catch (e) {}
+        return data;
+      }
+    } else {
+      console.warn("Supabase respondió con estado:", response.status);
     }
-  } catch (e) {
-    console.warn("No se pudo cargar información personalizada del negocio:", e);
+  } catch (err) {
+    console.error("Error al conectar con Supabase, usando respaldo local:", err);
   }
-  return DEFAULT_BUSINESS_INFO;
+  return PRODUCTS;
 }
 
-// Variables activas utilizadas por la app
-let PRODUCTS = getActiveProducts();
-let BUSINESS_INFO = getActiveBusinessInfo();
-
-// Función para guardar productos actualizados desde el panel admin
-function saveCustomProducts(newProductsList) {
+// Actualizar un producto en Supabase
+async function updateProductInSupabase(product) {
   try {
-    localStorage.setItem("casa_encurtido_custom_products", JSON.stringify(newProductsList));
-    PRODUCTS = newProductsList;
-    return true;
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/productos?id=eq.${encodeURIComponent(product.id)}`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        name: product.name,
+        category: product.category,
+        badge: product.badge,
+        available: product.available,
+        image: product.image,
+        description: product.description,
+        highlights: product.highlights,
+        formats: product.formats
+      })
+    });
+
+    return response.ok;
   } catch (e) {
-    console.error("Error al guardar productos:", e);
+    console.error("Error al actualizar en Supabase:", e);
     return false;
   }
 }
 
-// Función para guardar datos del negocio actualizados
-function saveCustomBusinessInfo(newInfo) {
+// Insertar un nuevo producto en Supabase
+async function insertProductInSupabase(product) {
   try {
-    localStorage.setItem("casa_encurtido_custom_info", JSON.stringify(newInfo));
-    BUSINESS_INFO = { ...DEFAULT_BUSINESS_INFO, ...newInfo };
-    return true;
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/productos`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(product)
+    });
+
+    return response.ok;
   } catch (e) {
-    console.error("Error al guardar info del negocio:", e);
+    console.error("Error al insertar en Supabase:", e);
     return false;
   }
 }
 
-// Función para restaurar catálogo de fábrica
-function resetToDefaultProducts() {
+// Eliminar producto de Supabase
+async function deleteProductFromSupabase(productId) {
   try {
-    localStorage.removeItem("casa_encurtido_custom_products");
-    localStorage.removeItem("casa_encurtido_custom_info");
-    PRODUCTS = DEFAULT_PRODUCTS;
-    BUSINESS_INFO = DEFAULT_BUSINESS_INFO;
-    return true;
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/productos?id=eq.${encodeURIComponent(productId)}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`
+      }
+    });
+
+    return response.ok;
   } catch (e) {
+    console.error("Error al eliminar de Supabase:", e);
     return false;
   }
 }
